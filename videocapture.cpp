@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <string>
+#include <queue>
 
 #if WIN32
 #include <windows.h>
@@ -19,15 +20,15 @@ using namespace cv;
 
 void getScreenResolution(int &width, int &height)
 {
-  #if WIN32
-    width  = (int) GetSystemMetrics(SM_CXSCREEN);
-    height = (int) GetSystemMetrics(SM_CYSCREEN);
-  #else
-    Display *disp = XOpenDisplay(NULL);
-    Screen *scrn = DefaultScreenOfDisplay(disp);
-    width = scrn->width;
-    height = scrn->height;
-  #endif
+#if WIN32
+   width  = (int) GetSystemMetrics(SM_CXSCREEN);
+   height = (int) GetSystemMetrics(SM_CYSCREEN);
+#else
+   Display *disp = XOpenDisplay(NULL);
+   Screen *scrn = DefaultScreenOfDisplay(disp);
+   width = scrn->width;
+   height = scrn->height;
+#endif
 }
 
 
@@ -40,15 +41,22 @@ String intToString(int num)
 
 
 
-int main()
+int main(int argc, char *argv[])
 {
-  namedWindow("video", WINDOW_NORMAL );
-  int width, height;
-  getScreenResolution(width,height);
-  resizeWindow("video", (int)width*0.6, (int)height*0.6);
+   if (argc<2)
+   {
+      std::cout<< "need to enter file path as an argument to program\nUsage: <Program_name> <path to video file>" ;
+      return -1;
+   }
+
+   namedWindow("video", WINDOW_NORMAL );
+   int width, height;
+   getScreenResolution(width,height);
+   resizeWindow("video", (int)width*0.6, (int)height*0.6);
+
 
   // open capture and check validity
-  const String path="car_parking.mp4";
+  const String path=argv[1];
   VideoCapture cap;
   cap.open(path);
   if (!cap.isOpened())
@@ -65,10 +73,11 @@ int main()
 
   cap >> frame1 ;
   cap >> frame2 ;
+ 
   Size frame_size = frame1.size();
   int video_fps = cap.get(CAP_PROP_FPS);
-  //LEN=time passed from last movement before ending video. In seconds
-  int frame_counter = 0,LEN = 2;
+  //FRONT_BUFFER=time passed from last movement before ending video. In seconds
+  int frame_counter = 0,FRONT_BUFFER = 2, BACK_BUFFER=2;
   VideoWriter writer;
 
 
@@ -93,7 +102,7 @@ int main()
 
     std::vector<std::vector<Point> > contours;
     std::vector<Vec4i> hierarchy;
-    findContours(img_threshold, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+    findContours(img_threshold, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
 
     for (int i=0; i<contours.size(); i++)
     {
@@ -102,36 +111,54 @@ int main()
     }
 
 
-    //write video logic . writes to a file every motion detected . Doesn't start a new video if the motion is less than LEN apart
+    //write video logic . writes to a file every motion detected . Doesn't start a new video if the motion is
+    //less than FRONT_BUFFER frames apart. Also records a buffer of BACK_BUFFER seconds before every movement
+    std::queue<Mat> buffer;
+    //if motion detected
     if (contours.size()!=0)
     {
        if (!started_recording)
        {
 	  writer.open(intToString(++video_counter)+".avi", VideoWriter::fourcc('M','J','P','G'), video_fps, frame_size);
 	  if (!writer.isOpened())
+	  {
 	     std::cout << "can't save file" << std::endl;
+	     return -1;
+	  }
 	  started_recording = 1;
+	  while (!buffer.empty())
+	  {
+	     writer.write(buffer.front());
+	     buffer.pop();
+	  }
        }
        writer.write(frame1);
        frame_counter = 0;
     }
+    //no motion detected and started recording
     else if (started_recording)
     {
-       if (frame_counter < (LEN*video_fps))
-	{
-	    frame_counter++;
-	    writer.write(frame1);
-	}
-	else
-        {
-	  frame_counter=0;
-	  writer.release();
-        }
+	 frame_counter++;
+	 if (frame_counter < (FRONT_BUFFER*video_fps))
+	      writer.write(frame1);
+	 else
+	 {
+	      frame_counter=0;
+	      writer.release();
+	 }
     }
+    //no motion detected and didn't start recording
+    else
+    {
+       buffer.push(frame1);
+       if (buffer.size() > BACK_BUFFER*video_fps)
+	  buffer.pop();
+    }
+       
 
     imshow("video", frame1);
 
-    int key = waitKey(1000 / 30);
+    int key = waitKey(30);
     if (key == 27)
       break;
     frame2.copyTo(frame1);
