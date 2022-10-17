@@ -47,6 +47,8 @@ void mouseCall(int event, int x, int y, int flags, void* param)
      {
      case (EVENT_LBUTTONDOWN): {
 	  MyMouseArg.left_mouse_clicked = 1; 
+	  //MyMouseArg.ROI.width = std::min(MyMouseArg.frame.cols , std::abs(x-initial_pos.x));
+	  //MyMouseArg.ROI.height = std::min(MyMouseArg.frame.rows, std::abs(y-initiial_pos.y));
 	  MyMouseArg.first_pos.x = x;  
 	  MyMouseArg.first_pos.y = y;  
      }
@@ -114,15 +116,16 @@ int main(int argc, char *argv[])
    }
 
    Mat frame1,frame2 ;
+ 
+
    cap >> frame1 ;
    cap >> frame2 ;
-
-   //ROI logic
    MouseArg MyMouseArg;
    MyMouseArg.frame = frame2.clone();
    std::cout << "Choose a Region of Interest for movement detection" << std::endl;
    std::cout << "Press left mouse click and drag, press 'ESC' when ready" << std::endl;
    setMouseCallback("video", mouseCall, (void*)&MyMouseArg);
+
    while (1)
    {
       rectangle (MyMouseArg.frame , MyMouseArg.ROI, Scalar(0,0,255), 5);
@@ -136,7 +139,6 @@ int main(int argc, char *argv[])
       MyMouseArg.frame = frame2.clone();
    }
   
-
    bool started_recording = 0;
    int video_counter = 0;
    Size frame_size = frame1.size();
@@ -200,6 +202,7 @@ int main(int argc, char *argv[])
 	       return -1;
 	    }
 	    started_recording = 1;
+	    //empty buffer into new video
 	    while (!buffer.empty())
 	    {
 	       writer.write(buffer.front());
@@ -225,11 +228,12 @@ int main(int argc, char *argv[])
       //no motion detected and didn't start recording
       else
       {
-	 buffer.push(frame1);
+	 buffer.push(frame1.clone());
 	 if (buffer.size() > BACK_BUFFER*video_fps)
 	    buffer.pop();
       }
        
+
 
       imshow("video", frame1);
       int key = waitKey(30);
